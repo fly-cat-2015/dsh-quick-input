@@ -1,0 +1,6 @@
+# 依赖（本插件无运行时依赖，link 安装时由 profile 提供）
+node_modules/
+
+# 系统 / 编辑器杂物
+.DS_Store
+*.log

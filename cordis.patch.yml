@@ -1,0 +1,6 @@
+# Bundle patch of the Quick Input plugin: mounts the Host row that owns the
+# quick-input data route. The Client half is contributed through the package
+# manifest's `dsh.client` section (see client.js).
+- insert:
+    - id: quick-input
+      name: '@local/dsh-quick-input'
