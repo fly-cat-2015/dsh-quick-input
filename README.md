@@ -7,6 +7,46 @@
 - 形态：标准 DSH bundle（宿主半侧 + 浏览器半侧），纯 JavaScript，无构建步骤
 - 语言：中文 / English（跟随 DSH 的 locale 服务）
 
+## 适配版本
+
+### 实机验证过的环境
+
+| 项目 | 版本 |
+| --- | --- |
+| DSH | `0.1.7-rc.1` |
+| profile | `web`（`@deepseek-ai/dsh-base` + `@deepseek-ai/dsh-web-app`） |
+| 浏览器半侧依赖的官方包 | `@deepseek-ai/dsh-client-ui-conversation`、`dsh-client-ui-settings`、`dsh-client-ui-settings-general`、`dsh-client-ui-slots`、`dsh-client-locale` 均为 `0.1.7-rc.1` |
+| 宿主半侧依赖的服务 | `@deepseek-ai/dsh-host-webserver` `0.1.7-rc.1` |
+| Node.js / 平台 | v24.5.0 / macOS (darwin) |
+
+验证日期 2026-09-24。验证范围：槽位注册（`conversation.input.dock`、`settings.section`）、宿主数据路由 CRUD 与落盘播种、客户端 apply 不抛错；界面观感由使用者目视确认。
+
+`package.json` 暂未声明 `engines` / `dsh` 版本区间：本插件用到的宿主契约都是**运行时探测 + 降级**（见下表），硬卡版本反而会挡住可用组合。环境与上表差异较大时，请先看下一节。
+
+### 依赖的宿主契约
+
+| 契约 | 出处 | 缺失 / 变更时的表现 |
+| --- | --- | --- |
+| `conversation.input.dock` 列表槽位（ownerProps `InputZone`，标准 props 含 `inputActions` / `useInput`） | ui-conversation | 槽位不存在 → 注册失败，输入框上方没有按钮（无降级） |
+| `InputActions.captureInsertion()` / `insertText()` / `setDraft()` | ui-conversation `contract/input` | 缺 `insertText` → 退回 `setDraft` 整体填充；两者都缺 → 点选无效果 |
+| 新会话 chip 行类名 `heroWorkspaceRow` | ui-conversation `ConversationRoot` | 改名 → 退回「输入框上方独立一行」，功能不受影响 |
+| `--dsh-composer-side-clearance` / `--dsh-composer-dock-inset` / `--dsh-composer-card-max-width` / `--dsh-composer-stack-gap` | ui-conversation 的 composer CSS | 缺失 → 用代码内兜底值（16 / 8 / 100% / 6px），仅轻微偏移 |
+| `conversation.input.selector.context`（官方「紧随工作区选择器」的加号位） | ui-conversation | **0.1.7-rc.1 未声明**，所以本插件改为 portal 进 chip 行；该槽位出现后可直接注册过去，实现更简单 |
+| `settings.section` 槽位（只投影 `id` / `order` / `label`，**没有 icon 字段**） | ui-settings-general | 槽位不存在 → 设置页不出现；日后支持 `icon` → 删掉设置菜单图标的绕路实现 |
+| 设置 nav 行结构 `[role="dialog"] nav button`，且行文本 = 当前 label | ui-settings-general `SettingsRoot` | 结构变更 → 设置项退回官方默认齿轮（不破版） |
+| nav 内置图标白名单 `account` / `models` / `agent-presets` / `plugins` / `archived-sessions` | ui-settings-general `navIcon()` | 与本插件无关：不在白名单内，这正是需要自行认领并绘制 ⚡ 的原因 |
+| `ctx.slots.inject` / `register`、`ctx.effect` | dsh-client-ui-slots / Cordis | 变更 → 插件不加载 |
+| `ctx.locale.register` / `bind` / `getLocale` / `subscribe` | dsh-client-locale | 缺失 → 文案回落为 key 本身 |
+| 浏览器模块表提供 `react`（必需）与 `react-dom`（投送 chip 用） | dsh-client-modules / `window.__ModuleLoader__` | 无 `react-dom` → 不做投送，留在 dock 行 |
+| `ctx.webServer.register({ kind: 'exact', path, handler })` 与 `IncomingMessage` / `ServerResponse` 处理器 | dsh-host-webserver | 变更 → 数据路由注册失败：界面能打开，但读写报错 |
+| `$DSH_HOME` 未设置时取 `~/.dsh` | dsh-home-paths 约定 | 数据目录随之变化 |
+
+### 不适用 / 未验证
+
+- **不适用**：`dsh-headless`、`dsh-acp-app`、`dsh-sdk-*` 等没有 Web 界面的 profile——本插件的两个槽位与数据路由只存在于 Web 组成里。
+- **未验证**：更早或更新的 DSH 版本、Windows / Linux、DSH Desktop（Electron）外壳、非 `web` 的 profile 名。
+- **可简化时机**：一旦宿主补上 `settings.section` 的 `icon` 字段、或声明 `conversation.input.selector.context` 槽位，本插件的两处绕路实现即可删除（README「实现要点」中均有标注）。
+
 ## 功能
 
 ### 1. 输入框上方的【快捷输入】按钮
