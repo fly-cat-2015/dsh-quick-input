@@ -17,7 +17,7 @@
  * tokens.
  */
 window.__ModuleLoader__.load({
-  id: '@local/dsh-quick-input',
+  id: '@fly-cat-2015/dsh-quick-input',
   factory(require) {
     const React = require('react')
     const h = React.createElement
@@ -408,8 +408,8 @@ window.__ModuleLoader__.load({
       if (typeof document === 'undefined') return
       ctx.effect(() => {
         const style = document.createElement('style')
-        style.dataset.plugin = '@local/dsh-quick-input'
-        style.dataset.pluginCss = '@local/dsh-quick-input/settings-nav-icon'
+        style.dataset.plugin = '@fly-cat-2015/dsh-quick-input'
+        style.dataset.pluginCss = '@fly-cat-2015/dsh-quick-input/settings-nav-icon'
         style.textContent = [
           `[${NAV_ICON_ATTR}]>svg{display:none}`,
           `[${NAV_ICON_ATTR}]::before{content:'';flex:none;width:${NAV_ICON_SIZE}px;height:${NAV_ICON_SIZE}px;background-color:currentColor;`,

@@ -3,4 +3,4 @@
 # manifest's `dsh.client` section (see client.js).
 - insert:
     - id: quick-input
-      name: '@local/dsh-quick-input'
+      name: '@fly-cat-2015/dsh-quick-input'

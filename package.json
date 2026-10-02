@@ -1,6 +1,6 @@
 {
-  "name": "@local/dsh-quick-input",
-  "version": "1.0.0",
+  "name": "@fly-cat-2015/dsh-quick-input",
+  "version": "1.0.1",
   "private": true,
   "description": "Quick input snippets above the DSH Web composer, with a settings page to manage them.",
   "type": "module",

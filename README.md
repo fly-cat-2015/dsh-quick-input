@@ -3,7 +3,7 @@
 在 DeepSeek Harness Web 的输入框上方加一个【快捷输入】按钮：点开候选弹层，点一条就把它填进输入框。
 候选内容在「设置 → 快捷输入」里增、删、改、查，数据落盘在本机，重启和换浏览器都不丢。
 
-- 插件 id：`quick-input`，包名 `@local/dsh-quick-input`
+- 插件 id：`quick-input`，包名 `@fly-cat-2015/dsh-quick-input`
 - 形态：标准 DSH bundle（宿主半侧 + 浏览器半侧），纯 JavaScript，无构建步骤
 - 语言：中文 / English（跟随 DSH 的 locale 服务）
 
@@ -81,7 +81,7 @@
 ### 卸载
 
 ```bash
-dsh plugin --profile <profile> remove @local/dsh-quick-input
+dsh plugin --profile <profile> remove @fly-cat-2015/dsh-quick-input
 ```
 
 > ⚠️ 本插件在本机是 **link 安装**：profile 的 `node_modules` 里是指向本目录的软链。
