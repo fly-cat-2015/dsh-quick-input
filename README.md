@@ -1,11 +1,12 @@
 # 快捷输入（Quick Input）— DSH 插件
 
-在 DeepSeek Harness Web 的输入框上方加一个【快捷输入】按钮：点开候选弹层，点一条就把它填进输入框。
+在 DeepSeek Harness Web 的输入框上方加一个【快捷输入】按钮：点开候选弹层（**向上展开**），点一条就把它填进输入框。
 候选内容在「设置 → 快捷输入」里增、删、改、查，数据落盘在本机，重启和换浏览器都不丢。
 
 - 插件 id：`quick-input`，包名 `@fly-cat-2015/dsh-quick-input`
 - 形态：标准 DSH bundle（宿主半侧 + 浏览器半侧），纯 JavaScript，无构建步骤
 - 语言：中文 / English（跟随 DSH 的 locale 服务）
+- 文案与默认内容：文案在 `locale/*.json`、内置示例在 `content/defaults.json`，改字不用动代码
 
 ## 适配版本
 
@@ -38,7 +39,8 @@
 | `ctx.slots.inject` / `register`、`ctx.effect` | dsh-client-ui-slots / Cordis | 变更 → 插件不加载 |
 | `ctx.locale.register` / `bind` / `getLocale` / `subscribe` | dsh-client-locale | 缺失 → 文案回落为 key 本身 |
 | 浏览器模块表提供 `react`（必需）与 `react-dom`（投送 chip 用） | dsh-client-modules / `window.__ModuleLoader__` | 无 `react-dom` → 不做投送，留在 dock 行 |
-| `ctx.webServer.register({ kind: 'exact', path, handler })` 与 `IncomingMessage` / `ServerResponse` 处理器 | dsh-host-webserver | 变更 → 数据路由注册失败：界面能打开，但读写报错 |
+| `ctx.webServer.register({ kind: 'exact', path, handler })` 与 `IncomingMessage` / `ServerResponse` 处理器 | dsh-host-webserver | 变更 → 数据路由注册失败：界面能打开，但读写与**文案/默认内容**都取不到（界面回落为 key 名与空列表） |
+| 浏览器模块表只服务插件 JS 产物（`/plugins/<id>/client.*.js`），不服务任意静态文件 | dsh-client-modules | 这是文案必须经宿主路由中转的原因；若日后支持静态资源，可直接 `fetch` 语言文件，本绕路即可删除 |
 | `$DSH_HOME` 未设置时取 `~/.dsh` | dsh-home-paths 约定 | 数据目录随之变化 |
 
 ### 不适用 / 未验证
@@ -51,8 +53,9 @@
 
 ### 1. 输入框上方的【快捷输入】按钮
 
-- **会话进行中**：按钮作为独立一行出现在输入框卡片上方（`conversation.input.dock`），左侧与输入框内容对齐，弹层向上展开。
-- **新会话（会话尚未开始）**：按钮自动并入官方的 chip 行，和「工作区 / 模式 / 模型」那几个 chip 同一行、同一套样式（透明胶囊、hover 跟随主题），弹层向下展开。
+- **会话进行中**：按钮作为独立一行出现在输入框卡片上方（`conversation.input.dock`），左侧与输入框内容对齐。
+- **新会话（会话尚未开始）**：按钮自动并入官方的 chip 行，和「工作区 / 模式 / 模型」那几个 chip 同一行、同一套样式（透明胶囊、hover 跟随主题）。
+- **弹层一律向上展开**（两种座位都是）：弹层被投送到 `document.body`，按按钮的视口矩形用 `position: fixed` 定位在按钮上方——既躲开输入框卡片（dock 行被压在卡片下面），也不会被输入框的滚动容器裁掉。只有在按钮离视口顶部太近、上方放不下可用高度时，才会临时改为向下展开。
 
 弹层内支持：搜索框过滤、`↑`/`↓` 选择、`Enter` 填入、`Esc` 或点击外部关闭。
 
@@ -94,7 +97,40 @@ dsh plugin --profile <profile> remove @fly-cat-2015/dsh-quick-input
 3. 内容被填进输入框，按需编辑后正常发送；
 4. 维护列表：设置 → 快捷输入。
 
-首次使用时若还没有数据文件，插件会自动写入 3 条示例（代码审查 / 解释说明 / 补充测试），可随意改删。
+首次使用时若还没有数据文件，插件会自动写入 1 条内置示例（代码审查），可随意改删。
+
+## 文案与默认内容（独立成文件维护）
+
+改字不用碰代码：所有面向用户的文案都在语言文件里，内置示例在 `content/defaults.json` 里。
+
+| 文件 | 内容 | 谁读它 |
+| --- | --- | --- |
+| `locale/zh.json` | `meta`（插件卡片标题/描述）+ `quickInput`（中文界面全部文案） | `meta`：dsh-app-boot 读插件卡片；`quickInput`：宿主半侧读，见下 |
+| `locale/en.json` | 同上，英文 | 同上 |
+| `content/defaults.json` | 内置示例条目（`items` 数组，纯文本，不参与翻译） | 宿主半侧，播种与「恢复默认」 |
+
+### 文案是怎么走到界面上的（以及为什么不能直接读文件）
+
+浏览器半侧**不能**自己读这些 JSON：客户端模块加载器只把插件的 JS 产物当资源服务（`/plugins/<id>/client.js` 及其 `client.*.js` chunk），`locale/zh.json` 之类的静态文件一律 404。所以：
+
+1. 宿主半侧启动后读一遍 `locale/` 目录（文件名即语言 id，如 `zh`、`en`、`zh-CN`），把每个文件的 `quickInput` 对象挂在数据路由上；
+2. 浏览器半侧 GET `/dsh-quick-input/items` 时同时拿到 `dictionaries`（各语言文案）与 `defaults`（内置示例），再按当前语言把它们注册进 `locale` 服务；
+3. 之后 `t('nav')` 取到的就是文件里的字。语言 id 按「中文 id → zh 字典，其它 → en 字典」派发，正好符合 locale 服务的回退链（`zh-CN → en`），所以中文和英文都不会串到 key 名。
+
+翻译行为：**文案不走 `meta`**。`meta` 只给插件卡片用（`dsh-app-boot` 只允许 `meta.title` / `meta.description`，多写的字段会被丢掉），界面文案一律放在同文件的 `quickInput` 里。
+
+新增一种语言：在 `locale/` 下加一个以语言 id 命名的 `.json`（如 `ja.json`），带 `quickInput` 对象即可。
+语言文件是**启动时读一次并缓存**的（`locale` 目录里其它不相干的 `.json` 会被忽略），加完文件重启 Harness 生效。
+
+### 内置示例（`content/defaults.json`）
+
+只有一条，首次使用时写进数据文件，也是「恢复默认」写回去的内容：
+
+```json
+{ "id": "default-code-review", "label": "代码审查", "content": "帮我审查当前代码变更：指出潜在的 bug、边界情况与可改进点，并给出具体修改建议。" }
+```
+
+`label` 是弹层/设置页里显示的名字，`content` 是点选后填进输入框的内容——都是纯文本，不参与翻译（所以中英文环境下看到的是同一份，想分语言维护的话，改成把文案放进语言文件也可以，只是那就不再是「一份默认内容」了）。
 
 ## 数据存储
 
@@ -113,18 +149,23 @@ $DSH_HOME/quick-input/items.json      # DSH_HOME 未设置时为 ~/.dsh
   "version": 1,
   "updatedAt": "2026-09-24T09:22:19.870Z",
   "items": [
-    { "id": "default-code-review", "label": "代码审查", "content": "请审查下面的代码，指出潜在的 bug、边界情况与可改进点：" }
+    { "id": "default-code-review", "label": "代码审查", "content": "帮我审查当前代码变更：指出潜在的 bug、边界情况与可改进点，并给出具体修改建议。" }
   ]
 }
 ```
+
+> 这条内容来自 `content/defaults.json`，不是插件代码里的字面量：首次使用时宿主半侧把文件里的示例交给浏览器半侧，后者写入这个文档。改 `defaults.json` 后，对**还没有文档**的机器、以及点过「恢复默认」的机器生效；路由不可用时「恢复默认」会拒绝执行（宁可不动，也不写空列表）。
 
 ### 宿主路由（浏览器半侧的唯一数据入口）
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `GET` | `/dsh-quick-input/items` | 返回 `{ items, path }`；`items: null` 表示还没有文档（浏览器半侧会写入内置示例） |
-| `PUT` | `/dsh-quick-input/items` | 请求体 `{ items: [...] }`，落盘后返回 `{ items, path }` |
-| `DELETE` | `/dsh-quick-input/items` | 删除文档（即恢复默认），返回 `{ items: null, path }` |
+| `GET` | `/dsh-quick-input/items` | 返回 `{ items, defaults, dictionaries, path }`；`items: null` 表示还没有文档（浏览器半侧会写入内置示例） |
+| `PUT` | `/dsh-quick-input/items` | 请求体 `{ items: [...] }`，落盘后返回 `{ items, defaults, dictionaries, path }` |
+| `DELETE` | `/dsh-quick-input/items` | 删除文档（即恢复默认），返回 `{ items: null, defaults, dictionaries, path }` |
+
+- `defaults`：内置示例（来自 `content/defaults.json`），每次都带。
+- `dictionaries`：各语言文案，形如 `{"en": {...}, "zh": {...}}`，键是语言 id（文件名小写）。只含 `quickInput` 一层，`meta` 不出现在这里。
 
 手工查看 / 重置：
 
@@ -149,21 +190,27 @@ curl -X DELETE http://127.0.0.1:3080/dsh-quick-input/items
 quick-input/
 ├── package.json          # bundle 清单：dsh.bundle.patch + dsh.client
 ├── cordis.patch.yml      # 插入宿主行 quick-input
-├── index.js              # 宿主半侧：数据文件读写 + /dsh-quick-input/items 路由
-├── client.js             # 浏览器半侧：共享 store + 输入框按钮/弹层 + 设置页 + 设置菜单图标
+├── index.js              # 宿主半侧：数据文件读写 + 文案/默认内容读取 + /dsh-quick-input/items 路由
+├── client.js             # 浏览器半侧：共享 store + 输入框按钮/向上弹层 + 设置页 + 设置菜单图标
 ├── locale/
-│   ├── zh.json           # 插件卡片中文标题/描述
-│   └── en.json           # 插件卡片英文标题/描述
+│   ├── en.json           # English：插件卡片 meta + 界面文案 quickInput
+│   └── zh.json           # 简体中文：同上
+├── content/
+│   └── defaults.json     # 内置示例条目（纯文本，不参与翻译）
 └── icon.svg              # 插件卡片图标
 ```
+
+> 内置示例**故意不放在 `locale/`**：`dsh-app-boot` 会把该目录下任何 2–8 个字母的文件名当成语言 id 去读（它读插件卡片文案），`defaults.json` 会被它当成一门叫 “defaults” 的语言。目前无害（文件中没有 `meta`，被忽略），但把数据文件放在那里是隐患，所以单独放 `content/`。
 
 ## 实现要点（二次开发参考）
 
 - **座位选择**：输入框按钮注册在 `conversation.input.dock`。新会话阶段再通过 `createPortal` 把自己投送进官方的 hero chip 行（`[class*="heroWorkspaceRow"]`），因为本 shell 没有声明 `conversation.input.selector.context` 这个「紧随工作区选择器」的加号位。定位只从自己的探针向上走并在同一个 `composerStack` 内校验，用 `MutationObserver` 重新解析；宿主类名若变更则自动退回 dock 行，不会破版。`react-dom` 用 try/catch 获取。做法参考已安装的 `@linxin666/dsh-client-ui-git-graph`。
+- **弹层向上展开**：dock 行所在的 composer 座位带 `z-index: 7`（`wSkVaW_composerSeat`），输入框卡片画在它上面——弹层挂在按钮旁边会被卡片盖住；`position:absolute` 还会被输入框的滚动容器裁掉。所以弹层 `createPortal` 到 `document.body`，用 `position: fixed` + 按钮 `getBoundingClientRect()` 的视口坐标贴到按钮上方（`placePopup()`）。重算挂在三处：`resize` / `scroll`（含捕获阶段的容器滚动）监听、`visualViewport` 的同样两个事件，以及**弹层自身**的 `ResizeObserver`（列表高度变化时重算；回调经 `requestAnimationFrame` 串联，避免观察自己造成循环）。观察器必须等弹层真正挂载后才创建，所以它单独放在一个以 `open` 为依赖的 effect 里。外部点击判定同时认「chip」与「弹层」两个节点（二者已不在同一棵子树里）。官方 `git-graph` 插件在同一座位是「弹层向下开」，本插件按需求改成两种座位都向上。
+- **文案与默认内容**：全部独立成文件（见上文「文案与默认内容」一节），`client.js` 里没有一份可显示的用户文案、也没有内置条目；宿主半侧读文件，浏览器半侧经数据路由取回并注册进 `locale` 服务。注册按语言 id 幂等推进（已注册的 id 不再重复注册——locale 服务对同一 `(namespace, 语言)` 的第二次注册会抛错），卸载时把注册逐个交还。
 - **填入输入框**：使用槽位标准 props 里的 `inputActions`（`captureInsertion()` → `insertText()`，失败退回 `setDraft()`），不直接操作 DOM。
 - **设置菜单图标**：`settings.section` 只投影 `id / order / label`，外壳也只给内置 id 配图标，其余一律齿轮。因此按 label 精确认领自己的 nav 行，藏掉外壳齿轮、用 `::before` + `mask-image`（`currentColor`）画 ⚡。该绕路方案在 `dshmarket`、`dsh-better-sidebar` 中同样存在，等槽位支持 `icon` 字段后应删除。
 - **样式**：只用 `--dsw-alias-*` 语义 token 与宿主的 composer 布局变量（`--dsh-composer-side-clearance` / `--dsh-composer-dock-inset` / `--dsh-composer-card-max-width`，均带兜底值）；类名统一 `dsh-qi-` 前缀；未 import 任何 Harness Client 包。
-- **资源归属**：字典注册、locale 订阅、nav 图标观察器、slot 注册全部挂在插件上下文的 `ctx.effect` 上，插件卸载即回收。
+- **资源归属**：locale 订阅、nav 图标观察器、slot 注册全部挂在插件上下文的 `ctx.effect` 上，插件卸载即回收。
 - **持久化**：数据由宿主半侧持有（同一 Harness 的所有浏览器共享一份），浏览器半侧只通过同源路由读写。
 
 ## 自检
@@ -171,9 +218,9 @@ quick-input/
 ```bash
 node --check index.js
 node --check client.js
-node -e "JSON.parse(require('fs').readFileSync('package.json','utf8'))"
+node -e "for (const f of ['package.json','locale/zh.json','locale/en.json','content/defaults.json']) JSON.parse(require('fs').readFileSync(f,'utf8'))"
 
-# 宿主路由
+# 宿主路由（应同时看到 items / defaults / dictionaries / path）
 curl http://127.0.0.1:3080/dsh-quick-input/items
 ```
 
@@ -185,5 +232,8 @@ curl http://127.0.0.1:3080/dsh-quick-input/items
 - 设置菜单图标的认领依赖 nav 行的可见文本与当前 label 相同；label 为空时不做任何标记（不会误伤其它行）。
 - hero chip 行的定位依赖宿主类名 `heroWorkspaceRow`；宿主改名会退回 dock 行（功能不受影响，只是位置变回独立一行）。
 - 会话进行中仍会占用输入框上方一行（这是刻意保留的行为）。
+- 弹层默认向上展开；按钮离视口顶部不足约 160px 时会临时向下开（否则上方放不下可用高度）。
+- 语言文件在启动时读一次并缓存：新增/修改 `locale/*.json` 需要重启 Harness；浏览器端刷新页面只会重新取一遍宿主已缓存的内容。
+- 若宿主路由不可用（网络/后端异常），界面会回落到 key 名与空列表：文案只有宿主这一份来源，代码里刻意不留副本。首次加载会重试 3 次（覆盖「浏览器先到、路由后注册」的冷启动竞态），之后打开弹层或进入设置页也会再试一次；恢复默认在拿不到内置示例时直接拒绝执行。
 - 暂未实现：拖拽排序、分组/标签、导入导出、变量占位符。
 - 未声明开源许可；如需开源请自行补充 `LICENSE` 与 `package.json` 的 `license` 字段。

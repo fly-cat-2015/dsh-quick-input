@@ -1,6 +1,45 @@
 {
   "meta": {
     "title": "快捷输入",
-    "description": "在输入框上方提供【快捷输入】按钮与候选内容弹层，并在设置中提供候选内容的增、删、改、查维护页面。"
+    "description": "在输入框上方提供【快捷输入】按钮与向上展开的候选弹层，并在设置中提供候选内容的增、删、改、查维护页面。"
+  },
+  "quickInput": {
+    "nav": "快捷输入",
+    "intro": "维护「快捷输入」候选内容：在输入框上方的【快捷输入】按钮中点选任意一条，即可填入输入框；内容保存在本机，重启后仍在。",
+    "trigger": "快捷输入",
+    "triggerTitle": "快捷输入：点选候选内容填入输入框",
+    "popupHint": "在 设置 → 快捷输入 中维护这份列表",
+    "popupEmpty": "没有匹配的内容",
+    "popupEmptyAll": "还没有快捷输入，请到 设置 → 快捷输入 中添加",
+    "searchPlaceholder": "搜索快捷输入…",
+    "untitled": "未命名",
+    "addSection": "新增内容",
+    "addHint": "Ctrl/⌘ + Enter 快速添加",
+    "labelLabel": "名称",
+    "labelPlaceholder": "例如：代码审查",
+    "contentLabel": "内容",
+    "contentPlaceholder": "例如：请审查下面的代码，指出潜在的 bug、边界情况与可改进点：",
+    "add": "添加",
+    "listSection": "已有内容",
+    "count": "共 {n} 条",
+    "empty": "暂无内容，请在上方新增。",
+    "noMatch": "没有匹配的内容。",
+    "edit": "编辑",
+    "remove": "删除",
+    "confirmRemove": "确认删除",
+    "save": "保存",
+    "cancel": "取消",
+    "reset": "恢复默认",
+    "confirmReset": "确认恢复默认",
+    "resetHint": "「恢复默认」会用内置示例覆盖当前列表（不影响其它设置）。",
+    "resetUnavailable": "无法读取内置示例（宿主路由不可用），未做任何修改。",
+    "loading": "读取中…",
+    "saving": "保存中…",
+    "saved": "已保存",
+    "loadFailed": "无法读取快捷输入数据（宿主路由不可用），当前改动只存在于页面内存中。",
+    "saveFailed": "保存失败：改动未写入本机数据文件。",
+    "emptyContent": "内容不能为空。",
+    "pathHint": "数据文件：",
+    "pathHintUnknown": "数据文件：读取中…"
   }
 }

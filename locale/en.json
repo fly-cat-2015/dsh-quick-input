@@ -1,6 +1,45 @@
 {
   "meta": {
     "title": "Quick Input",
-    "description": "A Quick Input button above the composer with reusable snippets, plus a settings page to add, edit, delete and search them."
+    "description": "A Quick Input button above the composer with an upward-opening snippet popup, plus a settings page to add, edit, delete and search the snippets."
+  },
+  "quickInput": {
+    "nav": "Quick Input",
+    "intro": "Maintain your quick-input candidates: pick one from the 【Quick Input】 button above the composer to insert it into the input box. Entries are stored on this machine and survive restarts.",
+    "trigger": "Quick Input",
+    "triggerTitle": "Quick Input: pick a candidate to fill the input box",
+    "popupHint": "Maintain this list under Settings → Quick Input",
+    "popupEmpty": "No matching entry",
+    "popupEmptyAll": "No quick input yet — add one under Settings → Quick Input",
+    "searchPlaceholder": "Search quick input…",
+    "untitled": "Untitled",
+    "addSection": "Add an entry",
+    "addHint": "Ctrl/⌘ + Enter to add",
+    "labelLabel": "Name",
+    "labelPlaceholder": "e.g. Code review",
+    "contentLabel": "Content",
+    "contentPlaceholder": "e.g. Review the code below for potential bugs, edge cases, and improvements:",
+    "add": "Add",
+    "listSection": "Existing entries",
+    "count": "{n} total",
+    "empty": "Nothing here yet — add one above.",
+    "noMatch": "No matching entry.",
+    "edit": "Edit",
+    "remove": "Delete",
+    "confirmRemove": "Confirm delete",
+    "save": "Save",
+    "cancel": "Cancel",
+    "reset": "Restore defaults",
+    "confirmReset": "Confirm restore",
+    "resetHint": "Restore defaults overwrites the current list with the built-in example.",
+    "resetUnavailable": "The built-in example could not be read (host route unavailable); nothing was changed.",
+    "loading": "Loading…",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "loadFailed": "Cannot read the quick-input document (host route unavailable); changes live in this page only.",
+    "saveFailed": "Save failed: changes were not written to the local data file.",
+    "emptyContent": "Content must not be empty.",
+    "pathHint": "Data file: ",
+    "pathHintUnknown": "Data file: loading…"
   }
 }

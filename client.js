@@ -3,7 +3,10 @@
  *
  * Two seats, one document:
  *   1. `conversation.input.dock` — the 【快捷输入】 button above the composer and
- *      its candidate popup; picking a candidate inserts it into the composer.
+ *      its candidate popup, opened UPWARD (the popup is portaled to the body and
+ *      positioned against the button's viewport rectangle, because the composer
+ *      card paints above the dock row's stacking context). Picking a candidate
+ *      inserts it into the composer.
  *   2. `settings.section` — the settings page that maintains the candidates
  *      (add / edit / delete / search).
  *
@@ -11,6 +14,12 @@
  * `<DSH home>/quick-input/items.json`, reached through the same-origin route
  * `/dsh-quick-input/items`. This file holds the shared store both seats read,
  * so a change made in Settings is visible to the composer popup at once.
+ *
+ * No user-facing text and no built-in entry is written here: the route also
+ * serves `dictionaries` (locale/en.json, locale/zh.json, …) and `defaults`
+ * (content/defaults.json), and this half only publishes what it received. A
+ * missing or unreachable route therefore degrades to key names and an empty
+ * list rather than to any hard-coded copy — see `rememberContent`.
  *
  * Plain JavaScript on purpose: React comes from the browser module table, the
  * plugin imports no Harness Client package, and styles use only `--dsw-alias-*`
@@ -21,7 +30,7 @@ window.__ModuleLoader__.load({
   factory(require) {
     const React = require('react')
     const h = React.createElement
-    const { useState, useEffect, useLayoutEffect, useMemo, useRef } = React
+    const { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } = React
     /** Portal helper; absent when the shell's module table has no react-dom. */
     let createPortal = null
     try {
@@ -33,106 +42,98 @@ window.__ModuleLoader__.load({
 
     /** Locale namespace of this plugin's own UI text. */
     const NS = 'quick-input'
-    /** Host route owning the quick-input document. */
+    /** Host route owning the quick-input document, its seeds and its dictionaries. */
     const ROUTE = '/dsh-quick-input/items'
+    /** Gap between the button and the popup it opens above. */
+    const POPUP_GAP = 6
+    /** Popup width cap, floor for a very narrow window, and viewport clearance. */
+    const POPUP_WIDTH = 440
+    const POPUP_MIN_WIDTH = 180
+    const POPUP_MARGIN = 8
+    const POPUP_MIN_HEIGHT = 120
+    /** Least usable height above the button before the popup flips downward. */
+    const POPUP_MIN_ABOVE = 160
+    /** Cold-start GET attempts, and the pause between them (linear backoff). */
+    const LOAD_ATTEMPTS = 3
+    const LOAD_RETRY_MS = 400
 
-    const ZH = {
-      nav: '快捷输入',
-      intro: '维护「快捷输入」候选内容：在输入框上方的【快捷输入】按钮中点选任意一条，即可填入输入框；内容保存在本机，重启后仍在。',
-      trigger: '快捷输入',
-      triggerTitle: '快捷输入：点选候选内容填入输入框',
-      popupHint: '在 设置 → 快捷输入 中维护这份列表',
-      popupEmpty: '没有匹配的内容',
-      popupEmptyAll: '还没有快捷输入，请到 设置 → 快捷输入 中添加',
-      searchPlaceholder: '搜索快捷输入…',
-      untitled: '未命名',
-      addSection: '新增内容',
-      addHint: 'Ctrl/⌘ + Enter 快速添加',
-      labelLabel: '名称',
-      labelPlaceholder: '例如：代码审查',
-      contentLabel: '内容',
-      contentPlaceholder: '例如：请审查下面的代码，指出潜在的 bug、边界情况与可改进点：',
-      add: '添加',
-      listSection: '已有内容',
-      count: '共 {n} 条',
-      empty: '暂无内容，请在上方新增。',
-      noMatch: '没有匹配的内容。',
-      edit: '编辑',
-      remove: '删除',
-      confirmRemove: '确认删除',
-      save: '保存',
-      cancel: '取消',
-      reset: '恢复默认',
-      confirmReset: '确认恢复默认',
-      resetHint: '「恢复默认」会用内置示例覆盖当前列表（不影响其它设置）。',
-      loading: '读取中…',
-      saving: '保存中…',
-      saved: '已保存',
-      loadFailed: '无法读取快捷输入数据（宿主路由不可用），当前改动只存在于页面内存中。',
-      saveFailed: '保存失败：改动未写入本机数据文件。',
-      emptyContent: '内容不能为空。',
-      pathHint: '数据文件：',
-      pathHintUnknown: '数据文件：读取中…',
-      default1Label: '代码审查',
-      default1Content: '请审查下面的代码，指出潜在的 bug、边界情况与可改进点：',
-      default2Label: '解释说明',
-      default2Content: '请解释下面的内容：说明它的原理，并给出一个最小可运行示例。',
-      default3Label: '补充测试',
-      default3Content: '请为下面的代码补充单元测试，覆盖正常路径与边界情况：',
+    /**
+     * The shipped content the Host serves. Both are replaced as soon as the
+     * route answers; until then the UI shows key names and no entries.
+     */
+    let dictionaries = {}
+    let defaultItems = []
+    /** Locale service and the ids already published, set by apply(). */
+    let localeService = null
+    const registered = new Set()
+    /** Disposers of this instance's locale registrations, released on unload. */
+    const dictionaryDisposers = []
+
+    /** Whether a language id belongs to a Chinese dictionary. */
+    function isChinese(id) {
+      return /^zh/i.test(String(id))
     }
 
-    const EN = {
-      nav: 'Quick Input',
-      intro:
-        'Maintain your quick-input candidates: pick one from the 【Quick Input】 button above the composer to insert it into the input box. Entries are stored on this machine and survive restarts.',
-      trigger: 'Quick Input',
-      triggerTitle: 'Quick Input: pick a candidate to fill the input box',
-      popupHint: 'Maintain this list under Settings → Quick Input',
-      popupEmpty: 'No matching entry',
-      popupEmptyAll: 'No quick input yet — add one under Settings → Quick Input',
-      searchPlaceholder: 'Search quick input…',
-      untitled: 'Untitled',
-      addSection: 'Add an entry',
-      addHint: 'Ctrl/⌘ + Enter to add',
-      labelLabel: 'Name',
-      labelPlaceholder: 'e.g. Code review',
-      contentLabel: 'Content',
-      contentPlaceholder: 'e.g. Review the code below for potential bugs, edge cases, and improvements:',
-      add: 'Add',
-      listSection: 'Existing entries',
-      count: '{n} total',
-      empty: 'Nothing here yet — add one above.',
-      noMatch: 'No matching entry.',
-      edit: 'Edit',
-      remove: 'Delete',
-      confirmRemove: 'Confirm delete',
-      save: 'Save',
-      cancel: 'Cancel',
-      reset: 'Restore defaults',
-      confirmReset: 'Confirm restore',
-      resetHint: 'Restore defaults overwrites the current list with the built-in examples.',
-      loading: 'Loading…',
-      saving: 'Saving…',
-      saved: 'Saved',
-      loadFailed: 'Cannot read the quick-input document (host route unavailable); changes live in this page only.',
-      saveFailed: 'Save failed: changes were not written to the local data file.',
-      emptyContent: 'Content must not be empty.',
-      pathHint: 'Data file: ',
-      pathHintUnknown: 'Data file: loading…',
-      default1Label: 'Code review',
-      default1Content: 'Review the code below for potential bugs, edge cases, and improvements:',
-      default2Label: 'Explain',
-      default2Content: 'Explain the content below: why it works, plus a minimal runnable example.',
-      default3Label: 'Add tests',
-      default3Content: 'Add unit tests for the code below, covering the happy path and edge cases:',
+    /** Copy the Host's dictionaries into a lookup: language id -> flat text map. */
+    function rememberDictionaries(source) {
+      if (!source || typeof source !== 'object') return
+      for (const [id, dictionary] of Object.entries(source)) {
+        if (typeof id === 'string' && id.length > 0 && dictionary && typeof dictionary === 'object') dictionaries[id] = dictionary
+      }
     }
 
-    /** Built-in seed entries, materialized in the active locale on first run. */
-    const DEFAULT_SPECS = [
-      { id: 'default-code-review', labelKey: 'default1Label', contentKey: 'default1Content' },
-      { id: 'default-explain', labelKey: 'default2Label', contentKey: 'default2Content' },
-      { id: 'default-add-tests', labelKey: 'default3Label', contentKey: 'default3Content' },
-    ]
+    /**
+     * The dictionary to publish for one language id.
+     *
+     * An exact file always wins, so adding `locale/ja.json` really gives Japanese
+     * to `ja`. Only an id with no file of its own borrows another language's
+     * text, and then by the direction the locale chain falls back in: a Chinese
+     * id borrows `zh`, everything else borrows `en`. Registering English text
+     * under `ja` would make a missing translation look like a present one.
+     * @param id - language id
+     * @returns the dictionary to register, or undefined when none was shipped
+     */
+    function dictionaryFor(id) {
+      const key = String(id).toLowerCase()
+      if (dictionaries[key]) return dictionaries[key]
+      return isChinese(id) ? dictionaries.zh ?? dictionaries.en : dictionaries.en ?? dictionaries.zh
+    }
+
+    /** Register one shipped dictionary for one language id, if it has not been. */
+    function registerDictionary(register, id, done) {
+      if (typeof id !== 'string' || id.length === 0 || done.has(id)) return
+      const dictionary = dictionaryFor(id)
+      if (!dictionary || Object.keys(dictionary).length === 0) return
+      try {
+        const dispose = register(id, dictionary)
+        // Remember only what we actually own: publishDictionaries() must be able
+        // to hand every registration back when the plugin unloads, or a reload
+        // would leave this namespace half-owned by a dead instance.
+        if (typeof dispose === 'function') dictionaryDisposers.push(dispose)
+        done.add(id)
+      } catch {
+        /* an id the registry refuses is simply left to the shared fallback */
+      }
+    }
+
+    /** The seed entries the Host shipped, copied so callers cannot mutate them. */
+    function seedItems() {
+      return defaultItems.map((item) => ({ id: item.id, label: item.label, content: item.content }))
+    }
+
+    /** Publish every shipped dictionary that has not been published yet. */
+    function publishDictionaries() {
+      if (!localeService) return
+      const register = (id, dictionary) => {
+        localeService.register(NS, id, dictionary)
+      }
+      for (const id of Object.keys(dictionaries)) registerDictionary(register, id, registered)
+      try {
+        registerDictionary(register, localeService.getLocale().active, registered)
+      } catch {
+        /* locale service unavailable: keep what is registered */
+      }
+    }
 
     /** Every class is prefixed; only `--dsw-alias-*` tokens carry color. */
     const CSS = [
@@ -154,12 +155,16 @@ window.__ModuleLoader__.load({
       // AgentPresetSeat pills that share that row.
       '.dsh-qi-trigger.dsh-qi-trigger-hero{height:auto;min-height:28px;max-width:min(100%,240px);padding:0 8px;border:none;border-radius:16px;background:transparent;color:var(--dsw-alias-label-primary);gap:4px;font-size:13px;font-weight:500;line-height:20px;overflow:hidden}',
       '.dsh-qi-trigger.dsh-qi-trigger-hero:hover,.dsh-qi-trigger.dsh-qi-trigger-hero[aria-expanded="true"]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}',
-      '.dsh-qi-popup{position:absolute;bottom:calc(100% + 6px);left:0;z-index:2147483000;width:min(440px,88vw);display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-overlay);box-shadow:0 8px 30px rgba(0,0,0,.28)}',
-      // Hero chip row sits above the input card: the popup opens DOWNWARD there,
-      // like the official workspace picker anchored under the same row.
-      '.dsh-qi-popup-hero{bottom:auto;top:calc(100% + 6px)}',
-      '.dsh-qi-search{box-sizing:border-box;width:100%;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);padding:5px 10px;font-size:13px;font-family:inherit;outline:none}',
-      '.dsh-qi-list{max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:2px}',
+      // The popup is portaled to the body: the dock row is painted under the
+      // composer card (`z-index: 7` on the seat), so a popup nested in that row
+      // is covered by the input box. `fixed` + inline coordinates put it above
+      // the button in both seats, and it ALWAYS opens upward.
+      '.dsh-qi-popup{position:fixed;z-index:2147483000;display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-overlay);box-shadow:0 8px 30px rgba(0,0,0,.28);overflow:hidden}',
+      '.dsh-qi-search{box-sizing:border-box;width:100%;flex:none;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);padding:5px 10px;font-size:13px;font-family:inherit;outline:none}',
+      // `flex:1;min-height:0` lets the list absorb whatever height the panel has
+      // left (its maxHeight is inline), so a short viewport scrolls the list
+      // instead of pushing rows out through the panel border.
+      '.dsh-qi-list{flex:1 1 auto;min-height:0;max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:2px}',
       '.dsh-qi-row{display:flex;flex-direction:column;gap:2px;align-items:flex-start;width:100%;box-sizing:border-box;text-align:left;border:0;background:transparent;color:var(--dsw-alias-label-primary);border-radius:8px;padding:6px 8px;font-family:inherit;cursor:pointer}',
       '.dsh-qi-row:hover,.dsh-qi-row[data-active="true"]{background:var(--dsw-alias-interactive-bg-hover)}',
       '.dsh-qi-row-label{font-size:13px;font-weight:500}',
@@ -207,8 +212,6 @@ window.__ModuleLoader__.load({
     let errorKind = ''
     let filePath = ''
     let seeded = false
-    /** Set by apply(): builds the built-in seeds in the active locale. */
-    let makeDefaults = () => []
 
     function emit() {
       for (const listener of Array.from(listeners)) {
@@ -251,19 +254,39 @@ window.__ModuleLoader__.load({
       return await response.json()
     }
 
-    /** Read once (or force a re-read) from the host document. */
+    /**
+     * Read once (or force a re-read) from the host document. The same answer
+     * carries the shipped dictionaries and seeds; both are adopted only when
+     * they actually arrived, so a route that is unreachable cannot wipe the
+     * content an earlier successful read already installed.
+     *
+     * This is also where the UI text comes from, so it is retried a few times on
+     * a cold start: the first call races the web server's route registration,
+     * and a lost race would otherwise leave every label showing its raw key
+     * until the user happened to open a seat.
+     */
     async function load(force) {
       if (loading) return
       if (loaded && !force) return
       loading = true
       emit()
       try {
-        const data = await request('GET')
+        let data
+        for (let attempt = 0; ; attempt += 1) {
+          try {
+            data = await request('GET')
+            break
+          } catch (error) {
+            if (dictionariesLoaded() || attempt >= LOAD_ATTEMPTS - 1) throw error
+            await delay(LOAD_RETRY_MS * (attempt + 1))
+          }
+        }
+        rememberContent(data)
         if (data && Array.isArray(data.items)) {
           items = data.items
           seeded = true
         } else if (!seeded) {
-          items = makeDefaults()
+          items = seedItems()
           seeded = true
           void persist(items) // first run: materialize the seeds so Settings lists real rows
         }
@@ -271,7 +294,7 @@ window.__ModuleLoader__.load({
         errorKind = ''
       } catch {
         if (!seeded) {
-          items = makeDefaults()
+          items = seedItems()
           seeded = true
         }
         errorKind = 'load'
@@ -282,13 +305,44 @@ window.__ModuleLoader__.load({
       }
     }
 
-    /** Apply a new list optimistically, then write it through the host route. */
+    /** Whether any shipped dictionary has been registered in this page. */
+    function dictionariesLoaded() {
+      return registered.size > 0
+    }
+
+    /** Wait, for the cold-start retry above. */
+    function delay(ms) {
+      return new Promise((resolvePromise) => {
+        setTimeout(resolvePromise, ms)
+      })
+    }
+
+    /**
+     * Adopt the content the Host shipped with one route answer: its UI
+     * dictionaries (published into the locale service, so `locale/<lang>.json`
+     * wording is what the user sees) and its built-in seeds (content/defaults.json).
+     * @param data - the parsed route body
+     */
+    function rememberContent(data) {
+      if (!data || typeof data !== 'object') return
+      rememberDictionaries(data.dictionaries)
+      if (Array.isArray(data.defaults)) defaultItems = data.defaults
+      publishDictionaries()
+    }
+
+    /**
+     * Apply a new list optimistically, then write it through the host route.
+     * The seed list may arrive with the very same answer, so it is adopted here
+     * too — `restore defaults` right after a first load then restores the real
+     * shipped list rather than an empty one.
+     */
     async function persist(next) {
       items = next
       saving = true
       emit()
       try {
         const data = await request('PUT', { items: next })
+        rememberContent(data)
         if (data && Array.isArray(data.items)) items = data.items
         errorKind = ''
       } catch {
@@ -342,6 +396,121 @@ window.__ModuleLoader__.load({
      */
     function isHeroChipRow(node) {
       return Boolean(node && typeof node.className === 'string' && node.className.includes('heroWorkspaceRow'))
+    }
+
+    /** Two placement results are the same box when every offset matches. */
+    function sameBox(left, right) {
+      if (!left || !right) return false
+      return left.left === right.left && left.top === right.top && left.bottom === right.bottom
+        && left.width === right.width && left.maxHeight === right.maxHeight
+    }
+
+    /** Viewport of the window the app is painted in (the visual viewport while zoomed). */
+    function viewportBox() {
+      const view = typeof window === 'undefined' ? undefined : window
+      const visual = view && view.visualViewport ? view.visualViewport : undefined
+      const width = visual ? visual.width : view ? view.innerWidth : 0
+      const height = visual ? visual.height : view ? view.innerHeight : 0
+      const left = visual ? visual.offsetLeft : 0
+      const top = visual ? visual.offsetTop : 0
+      return { left, top, width, height }
+    }
+
+    /**
+     * Place the popup against the button's own viewport rectangle.
+     *
+     * The popup is portaled to the body and `position: fixed`, for two reasons:
+     * the dock row is painted under the composer card (the seat carries
+     * `z-index: 7`), so a nested popup would be covered by the input box; and a
+     * `fixed` box cannot be clipped by the composer's own scroll container.
+     * It opens UPWARD in both seats — the caller's requirement — and only falls
+     * back to opening downward if the button sits too close to the top edge to
+     * fit a usable panel above it.
+     * @param anchor - the trigger button
+     * @returns inline offsets, or null while the button has no box yet
+     */
+    function placePopup(anchor) {
+      if (!anchor || typeof anchor.getBoundingClientRect !== 'function') return null
+      const rect = anchor.getBoundingClientRect()
+      if (rect.width === 0 && rect.height === 0) return null
+      const view = viewportBox()
+      const width = Math.max(POPUP_MIN_WIDTH, Math.min(POPUP_WIDTH, view.width - POPUP_MARGIN * 2))
+      const left = Math.max(view.left + POPUP_MARGIN, Math.min(rect.left, view.left + view.width - width - POPUP_MARGIN))
+      const above = rect.top - view.top - POPUP_GAP - POPUP_MARGIN
+      if (above >= POPUP_MIN_ABOVE) return { left, bottom: view.height + view.top - rect.top + POPUP_GAP, width, maxHeight: above }
+      const below = view.top + view.height - rect.bottom - POPUP_GAP - POPUP_MARGIN
+      return { left, top: rect.bottom + POPUP_GAP, width, maxHeight: Math.max(POPUP_MIN_HEIGHT, below) }
+    }
+
+    /**
+     * Keep {@link placePopup} applied to the popup.
+     *
+     * Two effects on purpose: the listeners live for as long as the seat does,
+     * while the ResizeObserver can only be attached once the popup node exists —
+     * and it does not exist until `open`, because the caller renders it
+     * conditionally. Keying the observer on `open` is what makes the panel
+     * re-measure when its own size changes (a longer list, a wrapped hint).
+     * @param anchorRef - ref of the trigger button
+     * @param open - whether the popup is currently rendered
+     * @returns the popup ref plus the current box, or null before the first measure
+     */
+    function usePopupPlacement(anchorRef, open) {
+      const popupRef = useRef(null)
+      const [box, setBox] = useState(null)
+
+      /** Measure the button and store the box, skipping no-op state writes. */
+      const update = useCallback(() => {
+        const next = placePopup(anchorRef.current)
+        setBox((previous) => (sameBox(previous, next) ? previous : next))
+      }, [anchorRef])
+
+      // Re-measure on any layout shift the window reports. `capture` picks up
+      // scrolling in the composer's own scroll container, not just the window.
+      useLayoutEffect(() => {
+        update()
+        const view = typeof window === 'undefined' ? null : window.visualViewport
+        window.addEventListener('resize', update)
+        window.addEventListener('scroll', update, true)
+        if (view) {
+          view.addEventListener('resize', update)
+          view.addEventListener('scroll', update)
+        }
+        return () => {
+          window.removeEventListener('resize', update)
+          window.removeEventListener('scroll', update, true)
+          if (view) {
+            view.removeEventListener('resize', update)
+            view.removeEventListener('scroll', update)
+          }
+        }
+      }, [update])
+
+      // The panel measures itself: content that grows or shrinks (search results
+      // arriving, a translate switch) changes its height, and the anchor can move
+      // without a window event — the blank-session hero row resolves
+      // asynchronously and carries the button out of the dock row. Chained
+      // through rAF so observing our own resize cannot loop.
+      useLayoutEffect(() => {
+        if (!open) return undefined
+        update()
+        const popup = popupRef.current
+        if (!popup || typeof ResizeObserver === 'undefined') return undefined
+        let frame = 0
+        const observer = new ResizeObserver(() => {
+          if (frame !== 0) return
+          frame = requestAnimationFrame(() => {
+            frame = 0
+            update()
+          })
+        })
+        observer.observe(popup)
+        return () => {
+          if (frame !== 0) cancelAnimationFrame(frame)
+          observer.disconnect()
+        }
+      }, [open, update])
+
+      return { popupRef, box }
     }
 
     /**
@@ -463,13 +632,21 @@ window.__ModuleLoader__.load({
         const [active, setActive] = useState(0)
         const probeRef = useRef(null)
         const chipRef = useRef(null)
+        const buttonRef = useRef(null)
         const searchRef = useRef(null)
         /** The hero chip row while a blank session renders one; null otherwise. */
         const [heroRow, setHeroRow] = useState(null)
+        /** Viewport-anchored geometry while the popup is open. */
+        const { popupRef, box } = usePopupPlacement(buttonRef, open)
 
         useEffect(() => {
-          void load()
-        }, [])
+          // Mount, and every time the popup opens: a failed first load leaves the
+          // UI without its shipped text, and the `loaded` flag would stop every
+          // later call. Re-reading on open is a second chance that needs no
+          // user-visible retry button. `force` is read from the store rather than
+          // closed over, so it reflects the outcome of the previous attempt.
+          void load(state.errorKind === 'load')
+        }, [open])
 
         // Blank session: join the official hero chip row instead of occupying a
         // dock row of our own. The hidden probe stays in the dock row, so the
@@ -493,7 +670,11 @@ window.__ModuleLoader__.load({
           if (!open) return undefined
           const onPointerDown = (event) => {
             const chip = chipRef.current
-            if (chip && !chip.contains(event.target)) setOpen(false)
+            const panel = popupRef.current
+            // Both nodes are ours: the chip in the composer, the panel on the body.
+            if (chip && chip.contains(event.target)) return
+            if (panel && panel.contains(event.target)) return
+            setOpen(false)
           }
           const onKeyDown = (event) => {
             if (event.key === 'Escape') setOpen(false)
@@ -561,14 +742,65 @@ window.__ModuleLoader__.load({
 
         // A blank session renders the chip inside the official hero chip row
         // (portaled); everywhere else it stays in the dock row, aligned with the
-        // composer card. chipRef covers button + popup for the outside-click check.
+        // composer card. chipRef covers button + popup for the outside-click
+        // check; buttonRef is what the popup is positioned against.
         const heroSeat = heroRow !== null && typeof createPortal === 'function'
+        const popupStyle = {
+          left: box ? box.left + 'px' : undefined,
+          top: box ? box.top + 'px' : undefined,
+          bottom: box ? box.bottom + 'px' : undefined,
+          width: box ? box.width + 'px' : 'min(' + POPUP_WIDTH + 'px,88vw)',
+          maxHeight: box ? box.maxHeight + 'px' : undefined,
+          visibility: box ? undefined : 'hidden',
+        }
+        /** The panel's own content; rendered once, in whichever seat holds it. */
+        const popup = open
+          ? h('div', { key: 'popup', ref: popupRef, className: 'dsh-qi-popup', style: popupStyle, 'aria-label': t('trigger') }, [
+              h('input', {
+                key: 'search',
+                ref: searchRef,
+                className: 'dsh-qi-search',
+                type: 'search',
+                value: query,
+                placeholder: t('searchPlaceholder'),
+                onChange: (event) => setQuery(event.target.value),
+                onKeyDown: onSearchKeyDown,
+              }),
+              h(
+                'div',
+                { key: 'list', className: 'dsh-qi-list', role: 'listbox' },
+                filtered.length === 0
+                  ? [h('div', { key: 'empty', className: 'dsh-qi-empty', children: list.length === 0 ? t('popupEmptyAll') : t('popupEmpty') })]
+                  : filtered.map((item, index) =>
+                      h(
+                        'button',
+                        {
+                          key: item.id,
+                          type: 'button',
+                          role: 'option',
+                          className: 'dsh-qi-row',
+                          'data-active': index === active ? 'true' : undefined,
+                          'aria-selected': index === active ? 'true' : 'false',
+                          onMouseEnter: () => setActive(index),
+                          onClick: () => pick(item),
+                        },
+                        [
+                          h('span', { key: 'label', className: 'dsh-qi-row-label', children: item.label || t('untitled') }),
+                          h('span', { key: 'content', className: 'dsh-qi-row-content', children: preview(item.content) }),
+                        ],
+                      ),
+                    ),
+              ),
+              h('div', { key: 'hint', className: 'dsh-qi-hint', children: t('popupHint') }),
+            ])
+          : null
         const chip = h('div', { key: 'chip', ref: chipRef, className: 'dsh-qi-anchor' }, [
           h('style', { key: 'css', children: CSS }),
           h(
             'button',
             {
               key: 'trigger',
+              ref: buttonRef,
               type: 'button',
               className: heroSeat ? 'dsh-qi-trigger dsh-qi-trigger-hero' : 'dsh-qi-trigger',
               title: t('triggerTitle'),
@@ -581,46 +813,10 @@ window.__ModuleLoader__.load({
               h('span', { key: 'label', children: t('trigger') }),
             ],
           ),
-          open
-            ? h('div', { key: 'popup', className: heroSeat ? 'dsh-qi-popup dsh-qi-popup-hero' : 'dsh-qi-popup', 'aria-label': t('trigger') }, [
-                h('input', {
-                  key: 'search',
-                  ref: searchRef,
-                  className: 'dsh-qi-search',
-                  type: 'search',
-                  value: query,
-                  placeholder: t('searchPlaceholder'),
-                  onChange: (event) => setQuery(event.target.value),
-                  onKeyDown: onSearchKeyDown,
-                }),
-                h(
-                  'div',
-                  { key: 'list', className: 'dsh-qi-list', role: 'listbox' },
-                  filtered.length === 0
-                    ? [h('div', { key: 'empty', className: 'dsh-qi-empty', children: list.length === 0 ? t('popupEmptyAll') : t('popupEmpty') })]
-                    : filtered.map((item, index) =>
-                        h(
-                          'button',
-                          {
-                            key: item.id,
-                            type: 'button',
-                            role: 'option',
-                            className: 'dsh-qi-row',
-                            'data-active': index === active ? 'true' : undefined,
-                            'aria-selected': index === active ? 'true' : 'false',
-                            onMouseEnter: () => setActive(index),
-                            onClick: () => pick(item),
-                          },
-                          [
-                            h('span', { key: 'label', className: 'dsh-qi-row-label', children: item.label || t('untitled') }),
-                            h('span', { key: 'content', className: 'dsh-qi-row-content', children: preview(item.content) }),
-                          ],
-                        ),
-                      ),
-                ),
-                h('div', { key: 'hint', className: 'dsh-qi-hint', children: t('popupHint') }),
-              ])
-            : null,
+          // Without react-dom there is no portal: the popup then stays nested in
+          // the dock row, open in the same direction (upward), painted under the
+          // composer card. Degraded but never broken.
+          createPortal ? null : popup,
         ])
         // The dock row is the chip's home; in the hero phase it only holds the
         // hidden probe while the chip is rendered inside the hero chip row.
@@ -631,6 +827,10 @@ window.__ModuleLoader__.load({
             heroSeat ? null : chip,
           ),
           heroSeat ? createPortal(chip, heroRow, 'chip-portal') : null,
+          // The popup leaves the composer subtree on purpose: the dock row is
+          // painted under the input card, so an attached popup would be covered
+          // by it. See placePopup().
+          open && createPortal ? createPortal(popup, document.body, 'popup-portal') : null,
         ])
       }
     }
@@ -652,7 +852,9 @@ window.__ModuleLoader__.load({
         const [notice, setNotice] = useState('')
 
         useEffect(() => {
-          void load()
+          // Force a re-read when an earlier attempt failed: this page is where the
+          // user goes to fix things, so entering it should retry the content.
+          void load(state.errorKind === 'load')
         }, [])
 
         const filtered = useMemo(() => filterItems(list, query), [list, query])
@@ -704,11 +906,21 @@ window.__ModuleLoader__.load({
             setNotice('')
             return
           }
+          // The seeds ship in content/defaults.json and only exist here once a
+          // route answer has delivered them. Without this guard a restore during
+          // an outage would PUT an empty list and destroy the user's entries —
+          // the one destructive write this plugin can make.
+          const seeds = seedItems()
+          if (seeds.length === 0) {
+            setConfirmReset(false)
+            setNotice(t('resetUnavailable'))
+            return
+          }
           setConfirmReset(false)
           setEditingId(null)
           setConfirmId(null)
           setNotice(t('saved'))
-          void persist(makeDefaults())
+          void persist(seeds)
         }
 
         const row = (item) => {
@@ -860,25 +1072,26 @@ window.__ModuleLoader__.load({
     return {
       inject: ['slots', 'locale'],
       apply(ctx) {
+        localeService = ctx.locale
         const locale = ctx.locale
         const t = locale.bind(NS)
-        makeDefaults = () => DEFAULT_SPECS.map((spec) => ({ id: spec.id, label: t(spec.labelKey), content: t(spec.contentKey) }))
 
-        // Register this plugin's own UI text for every known locale (Chinese
-        // ids get the Chinese dictionary, everything else English), and pick
-        // up languages that appear later. Both the registrations and the
-        // subscription are effects of this plugin's context.
-        const registered = new Set()
-        const dictionaryDisposers = []
-        const ensureDictionary = (id) => {
-          if (typeof id !== 'string' || id.length === 0 || registered.has(id)) return
-          try {
-            dictionaryDisposers.push(locale.register(NS, id, /^zh/i.test(id) ? ZH : EN))
-            registered.add(id)
-          } catch {
-            /* an id the registry refuses is simply left to the shared fallback */
-          }
-        }
+        // The UI text and the seed entries are NOT registered here: they live in
+        // locale/<lang>.json and content/defaults.json, are read by the Host half,
+        // and reach this half over the data route. `load()` then calls
+        // publishDictionaries() to register them per language id. Registering a
+        // placeholder here would be wrong twice over — it would shadow the
+        // shipped text until `load()` replaces it, and the registry refuses a
+        // second dictionary for a (namespace, language) pair.
+
+        // Pick up languages that appear later, re-trying ids whose dictionary had
+        // not been fetched yet. The subscription is an effect of this context.
+        ctx.effect(() => locale.subscribe(() => publishDictionaries()))
+
+        // Hand the dictionaries back on unload. The locale service refuses a
+        // second registration for a (namespace, language) pair for as long as
+        // the first one stands, so a reload that skipped this would leave every
+        // text resolved from a dead instance's dictionaries.
         ctx.effect(() => () => {
           for (const dispose of dictionaryDisposers.splice(0)) {
             try {
@@ -889,28 +1102,18 @@ window.__ModuleLoader__.load({
           }
           registered.clear()
         })
-        try {
-          const snapshot = locale.getLocale()
-          for (const definition of snapshot.locales) ensureDictionary(definition.id)
-          ensureDictionary(snapshot.active)
-        } catch {
-          ensureDictionary('en')
-        }
-        ctx.effect(() =>
-          locale.subscribe(() => {
-            try {
-              ensureDictionary(locale.getLocale().active)
-            } catch {
-              /* locale service unavailable: keep what is registered */
-            }
-          }),
-        )
 
         const Trigger = makeTrigger(t, locale)
         const Settings = makeSettings(t, locale)
 
         // The settings nav row's glyph (the slot itself cannot carry one).
         installSettingsNavIcon(ctx, () => t('nav'))
+
+        // The first load owns the dictionaries, so pull them in as soon as the
+        // plugin is applied rather than when a seat first renders: the settings
+        // nav row is drawn by the shell before either seat mounts, so a late
+        // registration would leave it labelled with the raw namespace key.
+        void load()
 
         ctx.slots.inject('conversation.input.dock', () =>
           ctx.slots.register({ name: 'conversation.input.dock', id: 'quick-input', order: 5 }, Trigger),

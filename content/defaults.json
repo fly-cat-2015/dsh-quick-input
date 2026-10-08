@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "description": "Built-in quick-input seed list. Read by the Host half (index.js) and served to the browser half over GET /dsh-quick-input/items as `defaults`; it seeds <DSH home>/quick-input/items.json on first use and is what 「恢复默认」 writes back. `label` is shown in the popup and in Settings → Quick Input; `content` is inserted into the composer. Both are plain text, not translation keys. Kept OUT of locale/: dsh-app-boot scans that directory for plugin-card metadata and accepts any 2-8 letter filename stem as a language id, so a data file there is read as a language file (`defaults` would become a bogus language).",
+  "items": [
+    {
+      "id": "default-code-review",
+      "label": "代码审查",
+      "content": "帮我审查当前代码变更：指出潜在的 bug、边界情况与可改进点，并给出具体修改建议。"
+    }
+  ]
+}
