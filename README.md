@@ -12,17 +12,43 @@
 
 ### 实机验证过的环境
 
+**当前：DSH 0.2.2-rc.3（2026-11-16）**
+
+| 项目 | 版本 |
+| --- | --- |
+| DSH | `0.2.2-rc.3` |
+| profile | `desktop`（`@deepseek-ai/dsh-base` + `@deepseek-ai/dsh-web-app`，DSH Desktop 外壳） |
+| 浏览器半侧依赖的官方包 | `@deepseek-ai/dsh-client-ui-conversation`、`dsh-client-ui-settings`、`dsh-client-ui-slots`、`dsh-client-locale` 均为 `0.2.2-rc.3` |
+| 宿主半侧依赖的服务 | `@deepseek-ai/dsh-host-webserver` `0.2.2-rc.3` |
+| Node.js / 平台 | v24 / macOS (darwin) |
+
+验证范围：`conversation.input.dock` 与 `settings.section` 仍按同一注册形状占用、输入框上方出现【快捷输入】按钮、宿主路由 `GET /dsh-quick-input/items` 返回 `200`（含 `items` / `defaults` / `dictionaries` / `path`）。弹层与设置页的点击交互由使用者目视确认。
+
+0.2.2 新增的 `conversation.hero.options`（新会话行右侧的紧凑选项位）**未采用**：本插件仍沿用 chip 行 portal，二者视觉与行为一致，暂不迁移。
+
+**历史：DSH 0.1.7-rc.1（2026-09-24）**
+
 | 项目 | 版本 |
 | --- | --- |
 | DSH | `0.1.7-rc.1` |
 | profile | `web`（`@deepseek-ai/dsh-base` + `@deepseek-ai/dsh-web-app`） |
-| 浏览器半侧依赖的官方包 | `@deepseek-ai/dsh-client-ui-conversation`、`dsh-client-ui-settings`、`dsh-client-ui-settings-general`、`dsh-client-ui-slots`、`dsh-client-locale` 均为 `0.1.7-rc.1` |
+| 浏览器半侧依赖的官方包 | 同上，均为 `0.1.7-rc.1` |
 | 宿主半侧依赖的服务 | `@deepseek-ai/dsh-host-webserver` `0.1.7-rc.1` |
 | Node.js / 平台 | v24.5.0 / macOS (darwin) |
 
-验证日期 2026-09-24。验证范围：槽位注册（`conversation.input.dock`、`settings.section`）、宿主数据路由 CRUD 与落盘播种、客户端 apply 不抛错；界面观感由使用者目视确认。
+### 升级后按钮不见了？
 
-`package.json` 暂未声明 `engines` / `dsh` 版本区间：本插件用到的宿主契约都是**运行时探测 + 降级**（见下表），硬卡版本反而会挡住可用组合。环境与上表差异较大时，请先看下一节。
+先看插件是不是被 profile 禁用了，而不是先怀疑版本不兼容：
+
+```yaml
+# ~/.dsh/profiles/<profile>/cordis.patch.yml
+- id: quick-input
+  disabled: true      # ← 有这行时插件根本不加载，界面自然没有按钮
+```
+
+在「设置 → 插件」里把「快捷输入」重新启用（等价于删掉上面两行），或直接编辑该文件后重启 Harness。0.1.7-rc.1 → 0.2.2-rc.3 之间，本插件用到的槽位名、注册形状、`InputActions`、locale 服务与 webServer 路由契约都没有变化，**不需要改插件代码**。
+
+`package.json` 暂未声明 `engines` / `dsh` 版本区间：本插件用到的宿主契约都是**运行时探测 + 降级**（见下表），硬卡版本反而会挡住可用组合；另外 semver 的预发布版本默认不落在普通区间里，写 `>=0.1.7-rc.1 <0.3.0` 反而会拒绝 `0.2.2-rc.3`。环境与上表差异较大时，请先看下一节。
 
 ### 依赖的宿主契约
 
@@ -32,7 +58,7 @@
 | `InputActions.captureInsertion()` / `insertText()` / `setDraft()` | ui-conversation `contract/input` | 缺 `insertText` → 退回 `setDraft` 整体填充；两者都缺 → 点选无效果 |
 | 新会话 chip 行类名 `heroWorkspaceRow` | ui-conversation `ConversationRoot` | 改名 → 退回「输入框上方独立一行」，功能不受影响 |
 | `--dsh-composer-side-clearance` / `--dsh-composer-dock-inset` / `--dsh-composer-card-max-width` / `--dsh-composer-stack-gap` | ui-conversation 的 composer CSS | 缺失 → 用代码内兜底值（16 / 8 / 100% / 6px），仅轻微偏移 |
-| `conversation.input.selector.context`（官方「紧随工作区选择器」的加号位） | ui-conversation | **0.1.7-rc.1 未声明**，所以本插件改为 portal 进 chip 行；该槽位出现后可直接注册过去，实现更简单 |
+| `conversation.input.selector.context`（官方「紧随工作区选择器」的加号位） | ui-conversation | **0.2.2-rc.3 仍未声明**，所以本插件继续 portal 进 chip 行；该槽位出现后可直接注册过去，实现更简单 |
 | `settings.section` 槽位（只投影 `id` / `order` / `label`，**没有 icon 字段**） | ui-settings-general | 槽位不存在 → 设置页不出现；日后支持 `icon` → 删掉设置菜单图标的绕路实现 |
 | 设置 nav 行结构 `[role="dialog"] nav button`，且行文本 = 当前 label | ui-settings-general `SettingsRoot` | 结构变更 → 设置项退回官方默认齿轮（不破版） |
 | nav 内置图标白名单 `account` / `models` / `agent-presets` / `plugins` / `archived-sessions` | ui-settings-general `navIcon()` | 与本插件无关：不在白名单内，这正是需要自行认领并绘制 ⚡ 的原因 |
@@ -46,8 +72,8 @@
 ### 不适用 / 未验证
 
 - **不适用**：`dsh-headless`、`dsh-acp-app`、`dsh-sdk-*` 等没有 Web 界面的 profile——本插件的两个槽位与数据路由只存在于 Web 组成里。
-- **未验证**：更早或更新的 DSH 版本、Windows / Linux、DSH Desktop（Electron）外壳、非 `web` 的 profile 名。
-- **可简化时机**：一旦宿主补上 `settings.section` 的 `icon` 字段、或声明 `conversation.input.selector.context` 槽位，本插件的两处绕路实现即可删除（README「实现要点」中均有标注）。
+- **未验证**：0.2.2-rc.3 的 `web` profile（非 Desktop 外壳）、Windows / Linux；0.1.7-rc.1 与 0.2.2-rc.3 之外的版本未逐一验证。
+- **可简化时机**：一旦宿主补上 `settings.section` 的 `icon` 字段、或声明 `conversation.input.selector.context` 槽位，本插件的两处绕路实现即可删除（README「实现要点」中均有标注）；若愿意接受右侧对齐，新会话的 chip 也可迁移到 0.2.2 的 `conversation.hero.options` 槽位。
 
 ## 功能
 
@@ -87,7 +113,8 @@
 dsh plugin --profile <profile> remove @fly-cat-2015/dsh-quick-input
 ```
 
-> ⚠️ 本插件在本机是 **link 安装**：profile 的 `node_modules` 里是指向本目录的软链。
+> ⚠️ 以目录方式安装时，profile 的 `node_modules` 里是指向本目录的软链（`link:`）；以
+> `github:` / 版本号安装时则是一份拷贝，改本目录的代码不会自动生效，需要重新安装。
 > 因此不要手动删除或移动本目录；要迁移位置请先卸载、再重新安装。
 
 ## 使用
