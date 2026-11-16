@@ -20,6 +20,7 @@
 | profile | `desktop`（`@deepseek-ai/dsh-base` + `@deepseek-ai/dsh-web-app`，DSH Desktop 外壳） |
 | 浏览器半侧依赖的官方包 | `@deepseek-ai/dsh-client-ui-conversation`、`dsh-client-ui-settings`、`dsh-client-ui-slots`、`dsh-client-locale` 均为 `0.2.2-rc.3` |
 | 宿主半侧依赖的服务 | `@deepseek-ai/dsh-host-webserver` `0.2.2-rc.3` |
+| 插件兼容声明 | `engines.dsh: ">=0.1.7-rc.1 <0.3.0"`（当前 `0.2.2-rc.3` 命中） |
 | Node.js / 平台 | v24 / macOS (darwin) |
 
 验证范围：`conversation.input.dock` 与 `settings.section` 仍按同一注册形状占用、输入框上方出现【快捷输入】按钮、宿主路由 `GET /dsh-quick-input/items` 返回 `200`（含 `items` / `defaults` / `dictionaries` / `path`）。弹层与设置页的点击交互由使用者目视确认。
@@ -48,7 +49,13 @@
 
 在「设置 → 插件」里把「快捷输入」重新启用（等价于删掉上面两行），或直接编辑该文件后重启 Harness。0.1.7-rc.1 → 0.2.2-rc.3 之间，本插件用到的槽位名、注册形状、`InputActions`、locale 服务与 webServer 路由契约都没有变化，**不需要改插件代码**。
 
-`package.json` 暂未声明 `engines` / `dsh` 版本区间：本插件用到的宿主契约都是**运行时探测 + 降级**（见下表），硬卡版本反而会挡住可用组合；另外 semver 的预发布版本默认不落在普通区间里，写 `>=0.1.7-rc.1 <0.3.0` 反而会拒绝 `0.2.2-rc.3`。环境与上表差异较大时，请先看下一节。
+`package.json` 声明了版本兼容区间：
+
+```json
+"engines": { "dsh": ">=0.1.7-rc.1 <0.3.0" }
+```
+
+DSH 从 0.2.1-alpha.3 起在安装/启动时优先读 `engines.dsh`（存在时忽略 `@deepseek-ai/dsh*` peer 依赖），并用 `semver.satisfies(..., { includePrerelease: true })` 判定，所以 `0.2.2-rc.3` 这类预发布版本也落在区间内（普通 semver 默认会把预发布版本排除在区间外，DSH 的检查器显式打开了 `includePrerelease`）。下限 `0.1.7-rc.1` 是首次实机验证的版本，上限 `<0.3.0` 覆盖 0.2.x 全系；0.3 及以后尚未验证，升级到 0.3 时应先复测再放宽区间。宿主契约本身仍是**运行时探测 + 降级**（见下表），`engines.dsh` 只负责提前拒绝明显不兼容的组合。
 
 ### 依赖的宿主契约
 
