@@ -542,12 +542,46 @@ window.__ModuleLoader__.load({
       return usable(row) ? row : null
     }
 
+    /** The ⚡ mark: one path in a 24×24 viewBox, shared by both icon paths. */
+    const BOLT_PATH =
+      'M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z'
+    /** Nav glyph box: the shell asks for size 16 and renders every nav icon there. */
+    const NAV_ICON_SIZE = 16
+
+    /**
+     * This section's glyph in the settings navigation (`settings.section.icon`).
+     *
+     * dsh 0.2.2 grew the seat: a registration whose id equals the sibling
+     * `settings.section` id contributes the glyph, while the shell keeps the
+     * button, the label and a decorative 16px wrapper. `size` and `active` arrive
+     * as owner props; the mark is `currentColor`, so normal, hover, selected and
+     * both themes colour it without extra CSS.
+     */
+    function makeNavIcon() {
+      return function QuickInputNavIcon(ownerProps) {
+        const size = ownerProps && Number.isFinite(ownerProps.size) && ownerProps.size > 0 ? ownerProps.size : NAV_ICON_SIZE
+        return h(
+          'svg',
+          {
+            width: size,
+            height: size,
+            viewBox: '0 0 24 24',
+            fill: 'currentColor',
+            'aria-hidden': 'true',
+            focusable: 'false',
+          },
+          h('path', { d: BOLT_PATH }),
+        )
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // Legacy nav glyph, for hosts that predate the icon seat (dsh < 0.2.2).
+    // ------------------------------------------------------------------
     /** Nav-row marker attribute: set on the settings nav row this section owns. */
     const NAV_ICON_ATTR = 'data-dsh-quick-input-nav-icon'
     /** The settings nav rows (`SettingsRoot` in dsh-client-ui-settings-general). */
     const NAV_ROW_SELECTOR = '[role="dialog"] nav button'
-    /** Nav glyph box: the shell renders every nav icon at 16px. */
-    const NAV_ICON_SIZE = 16
     /**
      * The bolt as a standalone mask image. Painted pure black on purpose: a mask
      * reads alpha only, and the visible colour comes from `currentColor`, so the
@@ -555,23 +589,22 @@ window.__ModuleLoader__.load({
      */
     const NAV_ICON_MASK =
       'data:image/svg+xml,' +
-      encodeURIComponent(
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#000">' +
-          '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>' +
-          '</svg>',
-      )
+      encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#000"><path d="' + BOLT_PATH + '"/></svg>')
 
     /**
-     * Give this section its own glyph in the settings navigation.
+     * Give this section its own glyph on hosts that predate the icon seat.
      *
-     * `settings.section` projects only `id` / `order` / `label`, and the shell
-     * picks nav glyphs from a closed id list (`account`, `models`,
-     * `agent-presets`, `plugins`, `archived-sessions`) with its own gear as the
-     * fallback — so every third-party section wears the gear, this one included.
-     * There is no option to pass: claim our own row, matched solely by the label
-     * the shell is currently projecting, and swap the gear for the bolt the
-     * composer chip already uses. dshmarket and dsh-better-sidebar ship the same
-     * workaround; delete this the day the slot grows an `icon` field.
+     * A host before dsh 0.2.2 projects only `id` / `order` / `label` from
+     * `settings.section`, and picks nav glyphs from a closed id list with its own
+     * gear as the fallback — so every third-party section wears the gear. There
+     * the gear is a direct child of the row button: claim the row by the label
+     * the shell is currently projecting, hide that gear, and draw the bolt with
+     * `::before` + `mask-image`. dshmarket keeps the same stand-in for them.
+     *
+     * Installed ONLY while no host declares `settings.section.icon` (see apply):
+     * the 0.2.2 shell wraps the fallback glyph in a decorative span, so a
+     * direct-child `svg` selector no longer hides it and the `::before` bolt is
+     * painted beside it — exactly the double-icon bug that guard avoids.
      */
     function installSettingsNavIcon(ctx, resolveLabel) {
       if (typeof document === 'undefined') return
@@ -1105,9 +1138,22 @@ window.__ModuleLoader__.load({
 
         const Trigger = makeTrigger(t, locale)
         const Settings = makeSettings(t, locale)
+        const NavIcon = makeNavIcon()
 
-        // The settings nav row's glyph (the slot itself cannot carry one).
-        installSettingsNavIcon(ctx, () => t('nav'))
+        // The settings nav row's glyph. dsh 0.2.2+ declares
+        // `settings.section.icon`, where this registration is the whole
+        // implementation. A host that never declares the seat keeps the legacy
+        // DOM stand-in, disposed the moment the seat appears (so a 0.2.2+ shell
+        // can never end up painting its fallback gear AND our bolt).
+        let stopNavStandIn
+        let hostPaintsNavIcon = false
+        ctx.slots.inject('settings.section.icon', () => {
+          hostPaintsNavIcon = true
+          if (typeof stopNavStandIn === 'function') stopNavStandIn()
+          stopNavStandIn = undefined
+          return ctx.slots.register({ name: 'settings.section.icon', id: 'quick-input' }, NavIcon)
+        })
+        if (!hostPaintsNavIcon) stopNavStandIn = installSettingsNavIcon(ctx, () => t('nav'))
 
         // The first load owns the dictionaries, so pull them in as soon as the
         // plugin is applied rather than when a seat first renders: the settings

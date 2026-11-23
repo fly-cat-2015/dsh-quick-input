@@ -12,20 +12,24 @@
 
 ### 实机验证过的环境
 
-**当前：DSH 0.2.2-rc.3（2026-11-16）**
+**当前：DSH 0.2.2-rc.5（2026-11-23）**
 
 | 项目 | 版本 |
 | --- | --- |
-| DSH | `0.2.2-rc.3` |
+| DSH | `0.2.2-rc.5` |
 | profile | `desktop`（`@deepseek-ai/dsh-base` + `@deepseek-ai/dsh-web-app`，DSH Desktop 外壳） |
-| 浏览器半侧依赖的官方包 | `@deepseek-ai/dsh-client-ui-conversation`、`dsh-client-ui-settings`、`dsh-client-ui-slots`、`dsh-client-locale` 均为 `0.2.2-rc.3` |
-| 宿主半侧依赖的服务 | `@deepseek-ai/dsh-host-webserver` `0.2.2-rc.3` |
-| 插件兼容声明 | `engines.dsh: ">=0.1.7-rc.1 <0.3.0"`（当前 `0.2.2-rc.3` 命中） |
+| 浏览器半侧依赖的官方包 | `@deepseek-ai/dsh-client-ui-conversation`、`dsh-client-ui-settings`、`dsh-client-ui-slots`、`dsh-client-locale` 均为 `0.2.2-rc.5` |
+| 宿主半侧依赖的服务 | `@deepseek-ai/dsh-host-webserver` `0.2.2-rc.5` |
+| 插件兼容声明 | `engines.dsh: ">=0.1.7-rc.1 <0.3.0"`（当前 `0.2.2-rc.5` 命中） |
 | Node.js / 平台 | v24 / macOS (darwin) |
 
-验证范围：`conversation.input.dock` 与 `settings.section` 仍按同一注册形状占用、输入框上方出现【快捷输入】按钮、宿主路由 `GET /dsh-quick-input/items` 返回 `200`（含 `items` / `defaults` / `dictionaries` / `path`）。弹层与设置页的点击交互由使用者目视确认。
+验证范围：`conversation.input.dock`、`settings.section` 与 `settings.section.icon` 均按预期占用、输入框上方出现【快捷输入】按钮、设置菜单里这一项只显示一个 ⚡（不再出现「⚡ + 齿轮」两个图标）、宿主路由 `GET /dsh-quick-input/items` 返回 `200`（含 `items` / `defaults` / `dictionaries` / `path`）。弹层与设置页的点击交互由使用者目视确认。
+
+0.2.2 后期新增的 `settings.section.icon` 槽位（`0.2.2-rc.5` 实机确认）：设置菜单图标改为注册该槽位，由外壳负责按钮、文字与 16px 图标容器；旧宿主（未声明该槽位）仍走 label 认领的 DOM 兜底。两条路径互斥，见「实现要点」。
 
 0.2.2 新增的 `conversation.hero.options`（新会话行右侧的紧凑选项位）**未采用**：本插件仍沿用 chip 行 portal，二者视觉与行为一致，暂不迁移。
+
+**历史：DSH 0.2.2-rc.3（2026-11-16）**：`conversation.input.dock` / `settings.section` 按同一形状占用，但该版本的 `settings.section` 没有图标字段，设置菜单图标走 DOM 认领兜底（该兜底在 rc.5 上会与外壳包裹过的齿轮叠加，故 1.0.4 起只在没有 `settings.section.icon` 槽位的宿主上启用）。
 
 **历史：DSH 0.1.7-rc.1（2026-09-24）**
 
@@ -47,7 +51,7 @@
   disabled: true      # ← 有这行时插件根本不加载，界面自然没有按钮
 ```
 
-在「设置 → 插件」里把「快捷输入」重新启用（等价于删掉上面两行），或直接编辑该文件后重启 Harness。0.1.7-rc.1 → 0.2.2-rc.3 之间，本插件用到的槽位名、注册形状、`InputActions`、locale 服务与 webServer 路由契约都没有变化，**不需要改插件代码**。
+在「设置 → 插件」里把「快捷输入」重新启用（等价于删掉上面两行），或直接编辑该文件后重启 Harness。0.1.7-rc.1 → 0.2.2-rc.3 之间，本插件用到的槽位名、注册形状、`InputActions`、locale 服务与 webServer 路由契约都没有变化；0.2.2 后期（rc.5 实机确认）外壳把设置菜单的默认图标包进了装饰性的 span，旧版按 `> svg` 隐藏齿轮的兜底因此失效，1.0.4 起改用官方 `settings.section.icon` 槽位并给旧宿主的兜底加了「无该槽位才启用」的守卫。
 
 `package.json` 声明了版本兼容区间：
 
@@ -66,9 +70,10 @@ DSH 从 0.2.1-alpha.3 起在安装/启动时优先读 `engines.dsh`（存在时�
 | 新会话 chip 行类名 `heroWorkspaceRow` | ui-conversation `ConversationRoot` | 改名 → 退回「输入框上方独立一行」，功能不受影响 |
 | `--dsh-composer-side-clearance` / `--dsh-composer-dock-inset` / `--dsh-composer-card-max-width` / `--dsh-composer-stack-gap` | ui-conversation 的 composer CSS | 缺失 → 用代码内兜底值（16 / 8 / 100% / 6px），仅轻微偏移 |
 | `conversation.input.selector.context`（官方「紧随工作区选择器」的加号位） | ui-conversation | **0.2.2-rc.3 仍未声明**，所以本插件继续 portal 进 chip 行；该槽位出现后可直接注册过去，实现更简单 |
-| `settings.section` 槽位（只投影 `id` / `order` / `label`，**没有 icon 字段**） | ui-settings-general | 槽位不存在 → 设置页不出现；日后支持 `icon` → 删掉设置菜单图标的绕路实现 |
-| 设置 nav 行结构 `[role="dialog"] nav button`，且行文本 = 当前 label | ui-settings-general `SettingsRoot` | 结构变更 → 设置项退回官方默认齿轮（不破版） |
-| nav 内置图标白名单 `account` / `models` / `agent-presets` / `plugins` / `archived-sessions` | ui-settings-general `navIcon()` | 与本插件无关：不在白名单内，这正是需要自行认领并绘制 ⚡ 的原因 |
+| `settings.section` 槽位（投影 `id` / `order` / `label`） | ui-settings-general | 槽位不存在 → 设置页不出现 |
+| `settings.section.icon` 槽位（ownerProps `size` / `active`；注册 `id` 必须等于对应 `settings.section` 的 `id`，`label` 不显示） | ui-settings-general（0.2.2 后期起，rc.5 实机确认） | 槽位不存在 → 图标注册不会执行，不报错；此时退回旧宿主的 DOM 兜底，仍显示 ⚡ |
+| 设置 nav 行结构 `[role="dialog"] nav button`，且行文本 = 当前 label（**仅旧宿主兜底用**） | ui-settings-general `SettingsRoot` | 0.2.2 后期起图标走 `settings.section.icon`，不再依赖行结构；旧宿主上结构变更 → 设置项退回官方默认齿轮（不破版） |
+| nav 内置图标白名单 `account` / `models` / `agent-presets` / `plugins` / `archived-sessions` | ui-settings-general `navIcon()` | 与本插件无关：不在白名单内，所以要走 `settings.section.icon`（或旧宿主的认领兜底） |
 | `ctx.slots.inject` / `register`、`ctx.effect` | dsh-client-ui-slots / Cordis | 变更 → 插件不加载 |
 | `ctx.locale.register` / `bind` / `getLocale` / `subscribe` | dsh-client-locale | 缺失 → 文案回落为 key 本身 |
 | 浏览器模块表提供 `react`（必需）与 `react-dom`（投送 chip 用） | dsh-client-modules / `window.__ModuleLoader__` | 无 `react-dom` → 不做投送，留在 dock 行 |
@@ -78,9 +83,9 @@ DSH 从 0.2.1-alpha.3 起在安装/启动时优先读 `engines.dsh`（存在时�
 
 ### 不适用 / 未验证
 
-- **不适用**：`dsh-headless`、`dsh-acp-app`、`dsh-sdk-*` 等没有 Web 界面的 profile——本插件的两个槽位与数据路由只存在于 Web 组成里。
-- **未验证**：0.2.2-rc.3 的 `web` profile（非 Desktop 外壳）、Windows / Linux；0.1.7-rc.1 与 0.2.2-rc.3 之外的版本未逐一验证。
-- **可简化时机**：一旦宿主补上 `settings.section` 的 `icon` 字段、或声明 `conversation.input.selector.context` 槽位，本插件的两处绕路实现即可删除（README「实现要点」中均有标注）；若愿意接受右侧对齐，新会话的 chip 也可迁移到 0.2.2 的 `conversation.hero.options` 槽位。
+- **不适用**：`dsh-headless`、`dsh-acp-app`、`dsh-sdk-*` 等没有 Web 界面的 profile——本插件的三个槽位与数据路由只存在于 Web 组成里。
+- **未验证**：0.2.2-rc.5 的 `web` profile（非 Desktop 外壳）、Windows / Linux；0.1.7-rc.1、0.2.2-rc.3、0.2.2-rc.5 之外的版本未逐一验证。
+- **可简化时机**：旧宿主的 DOM 兜底（`installSettingsNavIcon`）只是为没有 `settings.section.icon` 槽位的宿主保留，等兼容下限抬到 0.2.2 后期即可整段删除；`conversation.input.selector.context` 槽位出现后，新会话 chip 的 portal 也可换成直接注册；若愿意接受右侧对齐，新会话的 chip 还可以迁移到 0.2.2 的 `conversation.hero.options` 槽位。
 
 ## 功能
 
@@ -103,7 +108,7 @@ DSH 从 0.2.1-alpha.3 起在安装/启动时优先读 `engines.dsh`（存在时�
 - 另有「恢复默认」（同样两步确认）与数据文件路径显示
 - 写入即时生效：设置页保存后，输入框上的弹层立刻能选到新内容（同一份内存 store）
 
-设置菜单里这一项用的是 ⚡ 图标（与输入框上的按钮一致），不是默认的齿轮——原因见「实现要点」。
+设置菜单里这一项用的是 ⚡ 图标（与输入框上的按钮一致），不是默认的齿轮——新宿主由官方 `settings.section.icon` 槽位绘制，旧宿主才用 DOM 兜底，见「实现要点」。
 
 ## 安装
 
@@ -242,7 +247,7 @@ quick-input/
 - **弹层向上展开**：dock 行所在的 composer 座位带 `z-index: 7`（`wSkVaW_composerSeat`），输入框卡片画在它上面——弹层挂在按钮旁边会被卡片盖住；`position:absolute` 还会被输入框的滚动容器裁掉。所以弹层 `createPortal` 到 `document.body`，用 `position: fixed` + 按钮 `getBoundingClientRect()` 的视口坐标贴到按钮上方（`placePopup()`）。重算挂在三处：`resize` / `scroll`（含捕获阶段的容器滚动）监听、`visualViewport` 的同样两个事件，以及**弹层自身**的 `ResizeObserver`（列表高度变化时重算；回调经 `requestAnimationFrame` 串联，避免观察自己造成循环）。观察器必须等弹层真正挂载后才创建，所以它单独放在一个以 `open` 为依赖的 effect 里。外部点击判定同时认「chip」与「弹层」两个节点（二者已不在同一棵子树里）。官方 `git-graph` 插件在同一座位是「弹层向下开」，本插件按需求改成两种座位都向上。
 - **文案与默认内容**：全部独立成文件（见上文「文案与默认内容」一节），`client.js` 里没有一份可显示的用户文案、也没有内置条目；宿主半侧读文件，浏览器半侧经数据路由取回并注册进 `locale` 服务。注册按语言 id 幂等推进（已注册的 id 不再重复注册——locale 服务对同一 `(namespace, 语言)` 的第二次注册会抛错），卸载时把注册逐个交还。
 - **填入输入框**：使用槽位标准 props 里的 `inputActions`（`captureInsertion()` → `insertText()`，失败退回 `setDraft()`），不直接操作 DOM。
-- **设置菜单图标**：`settings.section` 只投影 `id / order / label`，外壳也只给内置 id 配图标，其余一律齿轮。因此按 label 精确认领自己的 nav 行，藏掉外壳齿轮、用 `::before` + `mask-image`（`currentColor`）画 ⚡。该绕路方案在 `dshmarket`、`dsh-better-sidebar` 中同样存在，等槽位支持 `icon` 字段后应删除。
+- **设置菜单图标（双路径，互斥）**：0.2.2 后期宿主声明了 `settings.section.icon`，注册一个 `id` 与 `settings.section` 相同的组件即可（ownerProps `size` / `active`，用 `currentColor` 画 ⚡，外壳负责按钮/文字/16px 容器）。代码用 `ctx.slots.inject('settings.section.icon', …)`：槽位已声明则同步注册；未声明（旧宿主，如 0.2.2-rc.3 及更早）则只在那一刻启用 label 认领的 DOM 兜底——按 `[role="dialog"] nav button` 的可见文本精确认领自己的行、藏掉外壳齿轮、用 `::before` + `mask-image` 画 ⚡；槽位一旦出现，兜底立即被 `stopNavStandIn()` 移除。rc.5 外壳把默认齿轮包进了装饰性 span，旧兜底的 `> svg` 选择器在那里既藏不住齿轮又会多画一个 ⚡，所以绝不能在新宿主上启用它（`dshmarket` 用同一套守卫）。等兼容下限抬到 0.2.2 后期，整段兜底可删除。
 - **样式**：只用 `--dsw-alias-*` 语义 token 与宿主的 composer 布局变量（`--dsh-composer-side-clearance` / `--dsh-composer-dock-inset` / `--dsh-composer-card-max-width`，均带兜底值）；类名统一 `dsh-qi-` 前缀；未 import 任何 Harness Client 包。
 - **资源归属**：locale 订阅、nav 图标观察器、slot 注册全部挂在插件上下文的 `ctx.effect` 上，插件卸载即回收。
 - **持久化**：数据由宿主半侧持有（同一 Harness 的所有浏览器共享一份），浏览器半侧只通过同源路由读写。
@@ -258,12 +263,13 @@ node -e "for (const f of ['package.json','locale/zh.json','locale/en.json','cont
 curl http://127.0.0.1:3080/dsh-quick-input/items
 ```
 
-安装后在 Harness 内可用 `cordis_inspect_query`（client / Slots）确认两个槽位的占用：
-`conversation.input.dock`（id `quick-input`, order 5）与 `settings.section`（id `quick-input`, order 30）。
+安装后在 Harness 内可用 `cordis_inspect_query`（client / Slots）确认三个槽位的占用：
+`conversation.input.dock`（id `quick-input`, order 5）、`settings.section`（id `quick-input`, order 30）与
+`settings.section.icon`（id `quick-input`，必须与 section 的 id 相同才会被投射）。
 
 ## 已知限制
 
-- 设置菜单图标的认领依赖 nav 行的可见文本与当前 label 相同；label 为空时不做任何标记（不会误伤其它行）。
+- 旧宿主的设置菜单图标兜底依赖 nav 行的可见文本与当前 label 相同；label 为空时不做任何标记（不会误伤其它行）。新宿主走 `settings.section.icon`，不依赖 DOM 结构，也不会出现「齿轮 + ⚡」两个图标。
 - hero chip 行的定位依赖宿主类名 `heroWorkspaceRow`；宿主改名会退回 dock 行（功能不受影响，只是位置变回独立一行）。
 - 会话进行中仍会占用输入框上方一行（这是刻意保留的行为）。
 - 弹层默认向上展开；按钮离视口顶部不足约 160px 时会临时向下开（否则上方放不下可用高度）。
