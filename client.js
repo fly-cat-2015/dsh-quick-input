@@ -604,11 +604,18 @@ window.__ModuleLoader__.load({
      * Installed ONLY while no host declares `settings.section.icon` (see apply):
      * the 0.2.2 shell wraps the fallback glyph in a decorative span, so a
      * direct-child `svg` selector no longer hides it and the `::before` bolt is
-     * painted beside it — exactly the double-icon bug that guard avoids.
+     * painted beside the registered icon — the double-icon bug this guard avoids.
+     *
+     * Returns the effect's disposer: `apply` keeps it in `stopNavStandIn` and
+     * calls it the moment the icon seat becomes declared. (The shell declares
+     * that seat AFTER this plugin applies, so the stand-in is installed first and
+     * must be retired then — returning nothing here would leave the `::before`
+     * bolt beside the real icon, which is exactly how a second ⚡ appeared.)
+     * @returns dispose function for the stylesheet and row markers, if installed
      */
     function installSettingsNavIcon(ctx, resolveLabel) {
-      if (typeof document === 'undefined') return
-      ctx.effect(() => {
+      if (typeof document === 'undefined') return undefined
+      return ctx.effect(() => {
         const style = document.createElement('style')
         style.dataset.plugin = '@fly-cat-2015/dsh-quick-input'
         style.dataset.pluginCss = '@fly-cat-2015/dsh-quick-input/settings-nav-icon'

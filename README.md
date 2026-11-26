@@ -25,7 +25,7 @@
 
 验证范围：`conversation.input.dock`、`settings.section` 与 `settings.section.icon` 均按预期占用、输入框上方出现【快捷输入】按钮、设置菜单里这一项只显示一个 ⚡（不再出现「⚡ + 齿轮」两个图标）、宿主路由 `GET /dsh-quick-input/items` 返回 `200`（含 `items` / `defaults` / `dictionaries` / `path`）。弹层与设置页的点击交互由使用者目视确认。
 
-0.2.2 后期新增的 `settings.section.icon` 槽位（`0.2.2-rc.5` 实机确认）：设置菜单图标改为注册该槽位，由外壳负责按钮、文字与 16px 图标容器；旧宿主（未声明该槽位）仍走 label 认领的 DOM 兜底。两条路径互斥，见「实现要点」。
+0.2.2 后期新增的 `settings.section.icon` 槽位（`0.2.2-rc.5` 实机确认）：设置菜单图标改为注册该槽位，由外壳负责按钮、文字与 16px 图标容器；旧宿主（未声明该槽位）仍走 label 认领的 DOM 兜底。两条路径互斥，见「实现要点」。（1.0.4 的兜底没有交还 `ctx.effect` 的 disposer，图标槽位出现后兜底仍留在页面上，于是出现「⚡ + ⚡」；1.0.5 起 `installSettingsNavIcon` 返回该 disposer，槽位一出现立即撤销。）
 
 0.2.2 新增的 `conversation.hero.options`（新会话行右侧的紧凑选项位）**未采用**：本插件仍沿用 chip 行 portal，二者视觉与行为一致，暂不迁移。
 
@@ -247,7 +247,7 @@ quick-input/
 - **弹层向上展开**：dock 行所在的 composer 座位带 `z-index: 7`（`wSkVaW_composerSeat`），输入框卡片画在它上面——弹层挂在按钮旁边会被卡片盖住；`position:absolute` 还会被输入框的滚动容器裁掉。所以弹层 `createPortal` 到 `document.body`，用 `position: fixed` + 按钮 `getBoundingClientRect()` 的视口坐标贴到按钮上方（`placePopup()`）。重算挂在三处：`resize` / `scroll`（含捕获阶段的容器滚动）监听、`visualViewport` 的同样两个事件，以及**弹层自身**的 `ResizeObserver`（列表高度变化时重算；回调经 `requestAnimationFrame` 串联，避免观察自己造成循环）。观察器必须等弹层真正挂载后才创建，所以它单独放在一个以 `open` 为依赖的 effect 里。外部点击判定同时认「chip」与「弹层」两个节点（二者已不在同一棵子树里）。官方 `git-graph` 插件在同一座位是「弹层向下开」，本插件按需求改成两种座位都向上。
 - **文案与默认内容**：全部独立成文件（见上文「文案与默认内容」一节），`client.js` 里没有一份可显示的用户文案、也没有内置条目；宿主半侧读文件，浏览器半侧经数据路由取回并注册进 `locale` 服务。注册按语言 id 幂等推进（已注册的 id 不再重复注册——locale 服务对同一 `(namespace, 语言)` 的第二次注册会抛错），卸载时把注册逐个交还。
 - **填入输入框**：使用槽位标准 props 里的 `inputActions`（`captureInsertion()` → `insertText()`，失败退回 `setDraft()`），不直接操作 DOM。
-- **设置菜单图标（双路径，互斥）**：0.2.2 后期宿主声明了 `settings.section.icon`，注册一个 `id` 与 `settings.section` 相同的组件即可（ownerProps `size` / `active`，用 `currentColor` 画 ⚡，外壳负责按钮/文字/16px 容器）。代码用 `ctx.slots.inject('settings.section.icon', …)`：槽位已声明则同步注册；未声明（旧宿主，如 0.2.2-rc.3 及更早）则只在那一刻启用 label 认领的 DOM 兜底——按 `[role="dialog"] nav button` 的可见文本精确认领自己的行、藏掉外壳齿轮、用 `::before` + `mask-image` 画 ⚡；槽位一旦出现，兜底立即被 `stopNavStandIn()` 移除。rc.5 外壳把默认齿轮包进了装饰性 span，旧兜底的 `> svg` 选择器在那里既藏不住齿轮又会多画一个 ⚡，所以绝不能在新宿主上启用它（`dshmarket` 用同一套守卫）。等兼容下限抬到 0.2.2 后期，整段兜底可删除。
+- **设置菜单图标（双路径，互斥）**：0.2.2 后期宿主声明了 `settings.section.icon`，注册一个 `id` 与 `settings.section` 相同的组件即可（ownerProps `size` / `active`，用 `currentColor` 画 ⚡，外壳负责按钮/文字/16px 容器）。代码用 `ctx.slots.inject('settings.section.icon', …)`：槽位已声明则同步注册；未声明（旧宿主，如 0.2.2-rc.3 及更早）则只在那一刻启用 label 认领的 DOM 兜底——按 `[role="dialog"] nav button` 的可见文本精确认领自己的行、藏掉外壳齿轮、用 `::before` + `mask-image` 画 ⚡；槽位一旦出现，兜底立即被 `stopNavStandIn()` 移除——因此 `installSettingsNavIcon` 必须返回 `ctx.effect` 的 disposer，只 `ctx.effect(...)` 而不返回会让兜底永久留在页面上，表现为两个 ⚡。rc.5 外壳把默认齿轮包进了装饰性 span，旧兜底的 `> svg` 选择器在那里既藏不住齿轮又会多画一个 ⚡，所以绝不能在新宿主上启用它（`dshmarket` 用同一套守卫）。等兼容下限抬到 0.2.2 后期，整段兜底可删除。
 - **样式**：只用 `--dsw-alias-*` 语义 token 与宿主的 composer 布局变量（`--dsh-composer-side-clearance` / `--dsh-composer-dock-inset` / `--dsh-composer-card-max-width`，均带兜底值）；类名统一 `dsh-qi-` 前缀；未 import 任何 Harness Client 包。
 - **资源归属**：locale 订阅、nav 图标观察器、slot 注册全部挂在插件上下文的 `ctx.effect` 上，插件卸载即回收。
 - **持久化**：数据由宿主半侧持有（同一 Harness 的所有浏览器共享一份），浏览器半侧只通过同源路由读写。
